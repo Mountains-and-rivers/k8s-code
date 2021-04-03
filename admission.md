@@ -1165,14 +1165,13 @@ func UpdateResource(r rest.Updater, scope *RequestScope, admit admission.Interfa
 
 validatingwebhook和mutatingwebhook分别位于staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/plugin.go，staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/mutating/plugin.go两个文件中。
 
-## 3.1 ValidatingAdmissionWebhook调用
+## 3.1 ValidatingAdmissionWebhook调用  
 
-
-1. ValidatingAdmissionWebhook的Validate()函数实现了ValidationInterface接口，有请求到来时kube-apiserver会调用所有admission 的Validate()方法。ValidatingAdmissionWebhook持有了一个Webhook对象，Validate()会调用Webhook.Dispatch()。
+1. ValidatingAdmissionWebhook的Validate()函数实现了ValidationInterface接口，有请求到来时kube-apiserver会调用所有admission 的Validate()方法。ValidatingAdmissionWebhook持有了一个Webhook对象，Validate()会调用Webhook.Dispatch()  
 
 2.Webhook.Dispatch()又调用了其持有的dispatcher的Dispatch()方法。dispatcher时通过dispatcherFactory创建的，dispatcherFactory是ValidatingAdmissionWebhook创建generic.Webhook时候传入的newValidatingDispatcher函数。调用dispatcherFactory函数创建的实际上是validatingDispatcher对象，也就是Webhook.Dispatch()调用的是validatingDispatcher.Dispatch()。
 
-3.validatingDispatcher.Dispatch()会逐个远程调用注册的webhook plugin
+3.validatingDispatcher.Dispatch()会逐个远程调用注册的webhook plugin  
 
 ![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/admission-01.png)
 
