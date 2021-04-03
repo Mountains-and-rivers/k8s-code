@@ -1160,12 +1160,12 @@ func UpdateResource(r rest.Updater, scope *RequestScope, admit admission.Interfa
 
 以上是PUT方法的例子，里面调用了MutationInterface和ValidationInterface。其他的方法比如POST、DELETE等也是类似。但是GET方法不会调用Admission Plugin。
 
-三、Webhook Admission 调用
+## 三、Webhook Admission 调用
 
 
 validatingwebhook和mutatingwebhook分别位于staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/plugin.go，staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/mutating/plugin.go两个文件中。
 
-3.1 ValidatingAdmissionWebhook调用
+## 3.1 ValidatingAdmissionWebhook调用
 
 
 1. ValidatingAdmissionWebhook的Validate()函数实现了ValidationInterface接口，有请求到来时kube-apiserver会调用所有admission 的Validate()方法。ValidatingAdmissionWebhook持有了一个Webhook对象，Validate()会调用Webhook.Dispatch()。
@@ -1332,7 +1332,7 @@ func (d *validatingDispatcher) Dispatch(ctx context.Context, attr admission.Attr
 }
 ```
 
-3.2 MutatingAdmissionWebhook调用
+## 3.2 MutatingAdmissionWebhook调用
 
 看MutatingWebhook的构造函数就可以看到，MutatingWebhook和ValidatingWebhook的代码架构是一样的，只不过在创建generic.Webhook的时候传入的dispatcherFactory函数是newMutatingDispatcher，所以Webhook.Dispatch()最终调用的就是mutatingDispatcher.Dispatch(),这个和validatingDispatcher.Dispatch的实现逻辑基本是一样的，也是根据WebhookConfiguration中的rules是否匹配找到相关的webhooks，然后逐个调用。
 
