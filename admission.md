@@ -47,6 +47,14 @@ func NewAdmissionOptions() *AdmissionOptions {
 	return &AdmissionOptions{
 		GenericAdmission: options,
 	}
+
+k8s.io\Kubernetes\staging\src\k8s.io\apiserver\pkg\server\plugins.go
+// RegisterAllAdmissionPlugins registers all admission plugins
+func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
+	lifecycle.Register(plugins)
+	validatingwebhook.Register(plugins)
+	mutatingwebhook.Register(plugins)
+}
 ```
 
 webhook的validating、mutating插件注册时在genericoptions.NewAdmissionOptions中，server.RegisterAllAdmissionPlugins注册了lifecycle、validatingwebhook、mutatingwebhook这三个插件。
