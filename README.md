@@ -140,16 +140,17 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    
    		<-stopCh
    
-   		// As soon as shutdown is initiated, /readyz should start returning failure.
-   		// 执行非阻塞Run
+   		// As soon as shutdown is initiated, /readyz should start returning failure.		
    		// This gives the load balancer a window defined by ShutdownDelayDuration to detect that /readyz is red
    		// and stop sending traffic to this server.
+   		// 当终止时，关闭readiness
    		close(s.readinessStopCh)
    
    		time.Sleep(s.ShutdownDelayDuration)
    	}()
    
    	// close socket after delayed stopCh
+   	// 执行非阻塞Run
    	stoppedCh, err := s.NonBlockingRun(delayedStopCh)
    	if err != nil {
    		return err
