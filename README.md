@@ -262,12 +262,12 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	}
       // 2. 判断是否配置了 APIExtensionsServer，创建 apiExtensionsConfig 
    	// If additional API servers are added, they should be gated.
-      // 3. 初始化 APIExtensionsServer, 通过一个空的delegate初始化
    	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, kubeAPIServerConfig.ExtraConfig.VersionedInformers, pluginInitializer, completedOptions.ServerRunOptions, completedOptions.MasterCount,
    		serviceResolver, webhook.NewDefaultAuthenticationInfoResolverWrapper(proxyTransport, kubeAPIServerConfig.GenericConfig.EgressSelector, kubeAPIServerConfig.GenericConfig.LoopbackClientConfig))
    	if err != nil {
    		return nil, err
    	}
+   	// 3. 初始化 APIExtensionsServer, 通过一个空的delegate初始化
    	apiExtensionsServer, err := createAPIExtensionsServer(apiExtensionsConfig, genericapiserver.NewEmptyDelegate())
    	if err != nil {
    		return nil, err
