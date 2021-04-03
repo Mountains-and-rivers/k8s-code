@@ -6,8 +6,6 @@
 
 kube-apiserver在调用NewServerRunOptions函数初始化options的时候，调用了NewAdmissionOptions去初始化了AdmissionOptions，并注册了内置的admission插件和webhook admission插件。
 
-k8s.io/Kubernetes/pkg/kubeapiserver/options/admission.go
-
 ```
 // NewServerRunOptions creates a new ServerRunOptions object with default parameters
 func NewServerRunOptions() *ServerRunOptions {
