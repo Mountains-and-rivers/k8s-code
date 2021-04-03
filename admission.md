@@ -48,13 +48,6 @@ func NewAdmissionOptions() *AdmissionOptions {
 		GenericAdmission: options,
 	}
 
-k8s.io\Kubernetes\staging\src\k8s.io\apiserver\pkg\server\plugins.go
-// RegisterAllAdmissionPlugins registers all admission plugins
-func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
-	lifecycle.Register(plugins)
-	validatingwebhook.Register(plugins)
-	mutatingwebhook.Register(plugins)
-}
 ```
 
 webhook的validating、mutating插件注册时在genericoptions.NewAdmissionOptions中，server.RegisterAllAdmissionPlugins注册了lifecycle、validatingwebhook、mutatingwebhook这三个插件。
@@ -82,9 +75,18 @@ func NewAdmissionOptions() *AdmissionOptions {
 	server.RegisterAllAdmissionPlugins(options.Plugins)
 	return options
 }
+
+
+k8s.io\Kubernetes\staging\src\k8s.io\apiserver\pkg\server\plugins.go
+// RegisterAllAdmissionPlugins registers all admission plugins
+func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
+	lifecycle.Register(plugins)
+	validatingwebhook.Register(plugins)
+	mutatingwebhook.Register(plugins)
+}
 ```
 
-二、Admission Plugins在kube-apiserver请求处理链中的位置
+## 二、Admission Plugins在kube-apiserver请求处理链中的位置
 
 
 kube-apiserver在cmd/kube-apiserver/app/server.go.buildGenericConfig()中根据ServerOptions生成GenericConfig。
