@@ -1166,9 +1166,7 @@ validatingwebhook和mutatingwebhook分别位于staging/src/k8s.io/apiserver/pkg/
 
 3.validatingDispatcher.Dispatch()会逐个远程调用注册的webhook plugin
 
-图片
-
-
+![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/admission-01.png)
 
 NewValidatingAdmissionWebhook初始化了ValidatingAdmissionWebhook对象，内部持有了一个generic.Webhook对象，generic.Webhook是一个Validate和mutate公用的框架，创建generic.Webhook时需要一个dispatcherFactory函数，用这个函数生成dispatcher对象
 
