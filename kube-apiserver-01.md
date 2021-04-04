@@ -1,5 +1,81 @@
 # kube-apiserver源码分析-01
 
+### 代码目录结构
+
+```
+|--api  // 存放api规范相关的文档
+
+|------api-rules  //已经存在的违反Api规范的api
+
+|------openapi-spec  //OpenApi规范
+
+|--build // 构建和测试脚本
+
+|------run.sh  //在容器中运行该脚本，后面可接多个命令：make, make cross 等
+
+|------copy-output.sh  //把容器中_output/dockerized/bin目录下的文件拷贝到本地目录
+
+|------make-clean.sh  //清理容器中和本地的_output目录
+
+|------shell.sh  // 容器中启动一个shell终端
+
+|------......
+
+|--cluster  // 自动创建和配置kubernetes集群的脚本，包括networking, DNS, nodes等
+
+|--cmd  // 内部包含各个组件的入口，具体核心的实现部分在pkg目录下
+
+|--hack  // 编译、构建及校验的工具类
+
+|--logo // kubernetes的logo
+
+|--pkg // 主要代码存放类，后面会详细补充该目录下内容
+
+|------kubeapiserver
+
+|------kubectl
+
+|------kubelet
+
+|------proxy
+
+|------registry
+
+|------scheduler
+
+|------security
+
+|------watch
+
+|------......
+
+|--plugin
+
+|------pkg/admission  //认证
+
+|------pkg/auth  //鉴权
+
+|--staging  // 这里的代码都存放在独立的repo中，以引用包的方式添加到项目中
+
+|------k8s.io/api
+
+|------k8s.io/apiextensions-apiserver
+
+|------k8s.io/apimachinery
+
+|------k8s.io/apiserver
+
+|------k8s.io/client-go
+
+|------......
+
+|--test  //测试代码
+
+|--third_party  //第三方代码，protobuf、golang-reflect等
+
+|--translations  //不同国家的语言包，使用poedit查看及编辑
+```
+
 kube-apiserver 是 kubernetes 中与 etcd 直接交互的一个组件，其控制着 kubernetes 中核心资源的变化。它主要提供了以下几个功能：
 
 - 提供 [Kubernetes API](https://kubernetes.io/docs/concepts/overview/kubernetes-api/)，包括认证授权、数据校验以及集群状态变更等，供客户端及其他组件调用；
