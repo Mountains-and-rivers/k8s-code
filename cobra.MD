@@ -1,6 +1,6 @@
 # kube-apiserver源码分析（一）之 NewAPIServerCommand
 
-> 以下代码分析基于 `kubernetes v1.12.0` 版本。
+> 以下代码分析基于 `kubernetes v1.20 版本。
 
 本文主要分析`kube-apiserver`中`cmd`部分的代码，即`NewAPIServerCommand`相关的代码。更多具体的逻辑待后续文章分析。
 
@@ -46,7 +46,8 @@ func main() {
 核心代码：
 
 ```
-// 初始化APIServerCommandcommand := app.NewAPIServerCommand(server.SetupSignalHandler())// 执行Executeerr := command.Execute()
+// 初始化APIServerCommandcommand := app.NewAPIServerCommand(server.SetupSignalHandler())
+// 执行Executeerr := command.Execute()
 ```
 
 # 2. NewAPIServerCommand

@@ -841,6 +841,35 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
 
 至此，启动步骤以前分析完了，三个组件的流量大体时一样的，通过`Complete().New()`初始化配置，创建所需的controller, 调用`InstallAPIGroup`注册`apigroup`。
 
+## 调用链
+
+```
+|-->CreateNodeDialer
+|
+|-->CreateKubeAPIServerConfig
+|
+CreateServerChain--|--> createAPIExtensionsConfig
+|
+||--> c.GenericConfig.New
+|--> createAPIExtensionsServer --> apiextensionsConfig.Complete().New--|
+||--> s.GenericAPIServer.InstallAPIGroup
+|
+||--> c.GenericConfig.New--> legacyRESTStorageProvider.NewLegacyRESTStorage
+||
+|-->CreateKubeAPIServer--> kubeAPIServerConfig.Complete().New--|--> m.InstallLegacyAPI
+||
+||--> m.InstallAPIs
+|
+|
+|--> createAggregatorConfig
+|
+||--> c.GenericConfig.New
+||
+|--> createAggregatorServer --> aggregatorConfig.Complete().NewWithDelegate--|--> apiservicerest.NewRESTStorage
+|
+|--> s.GenericAPIServer.InstallAPIGroup
+```
+
 ## 请求分析
 
 上面我们分析了apiserver的调用链，大体如下
