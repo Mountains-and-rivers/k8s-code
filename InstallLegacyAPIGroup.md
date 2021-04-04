@@ -179,6 +179,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 	}
 
 	// what verbs are supported by the storage, used to know what verbs we support per path
+	// 1、判断该 resource 实现了哪些 REST 操作接口，以此来判断其支持的 verbs 以便为其添加路由
 	creater, isCreater := storage.(rest.Creater)
 	namedCreater, isNamedCreater := storage.(rest.NamedCreater)
 	lister, isLister := storage.(rest.Lister)
@@ -351,6 +352,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 	}
 
 	// Get the list of actions for the given scope.
+	// 2、为 resource 添加对应的 actions 并根据是否支持 namespace 
 	switch {
 	case !namespaceScoped:
 		// Handle non-namespace scoped resources like nodes.
@@ -478,7 +480,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 	mediaTypes, streamMediaTypes := negotiation.MediaTypesForSerializer(a.group.Serializer)
 	allMediaTypes := append(mediaTypes, streamMediaTypes...)
 	ws.Produces(allMediaTypes...)
-
+    // 3、根据 action 创建对应的 route
 	kubeVerbs := map[string]struct{}{}
 	reqScope := handlers.RequestScope{
 		Serializer:      a.group.Serializer,
@@ -523,6 +525,9 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			return nil, fmt.Errorf("failed to create field manager: %v", err)
 		}
 	}
+	
+	// 4、从 rest.Storage 到 restful.Route 映射
+    // 为每个操作添加对应的 handler
 	for _, action := range actions {
 		producedObject := storageMeta.ProducesObject(action.Verb)
 		if producedObject == nil {
@@ -726,8 +731,10 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			}
 			addParams(route, action.Params)
 			routes = append(routes, route)
+			// 此处以 POST 操作进行说明
 		case "POST": // Create a resource.
 			var handler restful.RouteFunction
+			// 5、初始化 handler
 			if isNamedCreater {
 				handler = restfulCreateNamedResource(namedCreater, reqScope, admit)
 			} else {
@@ -742,6 +749,8 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			if isSubresource {
 				doc = "create " + subresource + " of" + article + kind
 			}
+			
+			// 6、route 与 handler 进行绑定
 			route := ws.POST(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -758,6 +767,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 				return nil, err
 			}
 			addParams(route, action.Params)
+			// 7、添加到路由中
 			routes = append(routes, route)
 		case "DELETE": // Delete a resource.
 			article := GetArticleForNoun(kind, " ")
@@ -955,7 +965,191 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 
 至此，InstallLegacyAPI方法的逻辑就分析完了。总的来说，这个方法遵循了go-restful的设计模式，在/api路径下注册了WebService，并将WebService加入Container中。
 
-**三、Container.Add**
+**三、restfulCreateNamedResource**
+
+`restfulCreateNamedResource` 是 POST 操作对应的 handler，最终会调用 `createHandler` 方法完成
+
+k8s.io\Kubernetes\staging\src\k8s.io\apiserver\pkg\endpoints\installer.go
+
+```
+func restfulCreateNamedResource(r rest.NamedCreater, scope handlers.RequestScope, admit admission.Interface) restful.RouteFunction {
+	return func(req *restful.Request, res *restful.Response) {
+		handlers.CreateNamedResource(r, &scope, admit)(res.ResponseWriter, req.Request)
+	}
+}
+// CreateNamedResource returns a function that will handle a resource creation with name.
+func CreateNamedResource(r rest.NamedCreater, scope *RequestScope, admission admission.Interface) http.HandlerFunc {
+	return createHandler(r, scope, admission, true)
+}
+```
+
+##### createHandler
+
+`createHandler` 是将数据写入到后端存储的方法，对于资源的操作都有相关的权限控制，在 `createHandler` 中首先会执行 `decoder` 和 `admission` 操作，然后调用 `create` 方法完成 resource 的创建，在 `create` 方法中会进行 `validate` 以及最终将数据保存到后端存储中。`admit` 操作即执行 kube-apiserver 中的 admission-plugins，admission-plugins 在 `CreateKubeAPIServerConfig` 中被初始化为了 admissionChain，其初始化的调用链为 `CreateKubeAPIServerConfig --> buildGenericConfig --> s.Admission.ApplyTo --> a.GenericAdmission.ApplyTo --> a.Plugins.NewFromPlugins`，最终在 `a.Plugins.NewFromPlugins` 中将所有已启用的 plugins 封装为 admissionChain，此处要执行的 admit 操作即执行 admission-plugins 中的 admit 操作。
+
+`createHandler` 中调用的 create 方法是`genericregistry.Store` 对象的方法，在每个 resource 初始化 RESTStorage 都会引入 `genericregistry.Store` 对象。
+
+`createHandler` 中所有的操作就是本文开头提到的请求流程，如下所示：
+
+```
+v1beta1 ⇒internal⇒|⇒|⇒  v1  ⇒ json/yaml ⇒ etcd                     admission    validation
+```
+
+k8s.io\Kubernetes\vendor\k8s.io\apiserver\pkg\endpoints\handlers\create.go
+
+```
+func createHandler(r rest.NamedCreater, scope *RequestScope, admit admission.Interface, includeName bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		// For performance tracking purposes.
+		trace := utiltrace.New("Create", utiltrace.Field{Key: "url", Value: req.URL.Path}, utiltrace.Field{Key: "user-agent", Value: &lazyTruncatedUserAgent{req}}, utiltrace.Field{Key: "client", Value: &lazyClientIP{req}})
+		defer trace.LogIfLong(500 * time.Millisecond)
+
+		if isDryRun(req.URL) && !utilfeature.DefaultFeatureGate.Enabled(features.DryRun) {
+			scope.err(errors.NewBadRequest("the dryRun feature is disabled"), w, req)
+			return
+		}
+
+		// TODO: we either want to remove timeout or document it (if we document, move timeout out of this function and declare it in api_installer)
+		timeout := parseTimeout(req.URL.Query().Get("timeout"))
+
+		namespace, name, err := scope.Namer.Name(req)
+		if err != nil {
+			if includeName {
+				// name was required, return
+				scope.err(err, w, req)
+				return
+			}
+
+			// otherwise attempt to look up the namespace
+			namespace, err = scope.Namer.Namespace(req)
+			if err != nil {
+				scope.err(err, w, req)
+				return
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(req.Context(), timeout)
+		defer cancel()
+		ctx = request.WithNamespace(ctx, namespace)
+		outputMediaType, _, err := negotiation.NegotiateOutputMediaType(req, scope.Serializer, scope)
+		if err != nil {
+			scope.err(err, w, req)
+			return
+		}
+      // 1、得到合适的SerializerInfo
+		gv := scope.Kind.GroupVersion()
+		s, err := negotiation.NegotiateInputSerializer(req, false, scope.Serializer)
+		if err != nil {
+			scope.err(err, w, req)
+			return
+		}
+     // 2、找到合适的 decoder
+		decoder := scope.Serializer.DecoderToVersion(s.Serializer, scope.HubGroupVersion)
+
+		body, err := limitedReadBody(req, scope.MaxRequestBodyBytes)
+		if err != nil {
+			scope.err(err, w, req)
+			return
+		}
+
+		options := &metav1.CreateOptions{}
+		values := req.URL.Query()
+		if err := metainternalversionscheme.ParameterCodec.DecodeParameters(values, scope.MetaGroupVersion, options); err != nil {
+			err = errors.NewBadRequest(err.Error())
+			scope.err(err, w, req)
+			return
+		}
+		if errs := validation.ValidateCreateOptions(options); len(errs) > 0 {
+			err := errors.NewInvalid(schema.GroupKind{Group: metav1.GroupName, Kind: "CreateOptions"}, "", errs)
+			scope.err(err, w, req)
+			return
+		}
+		options.TypeMeta.SetGroupVersionKind(metav1.SchemeGroupVersion.WithKind("CreateOptions"))
+
+		defaultGVK := scope.Kind
+		original := r.New()
+		trace.Step("About to convert to expected version")
+		// 3、decoder 解码
+		obj, gvk, err := decoder.Decode(body, &defaultGVK, original)
+		if err != nil {
+			err = transformDecodeError(scope.Typer, err, original, gvk, body)
+			scope.err(err, w, req)
+			return
+		}
+		if gvk.GroupVersion() != gv {
+			err = errors.NewBadRequest(fmt.Sprintf("the API version in the data (%s) does not match the expected API version (%v)", gvk.GroupVersion().String(), gv.String()))
+			scope.err(err, w, req)
+			return
+		}
+		trace.Step("Conversion done")
+
+		ae := request.AuditEventFrom(ctx)
+		admit = admission.WithAudit(admit, ae)
+		audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
+
+		userInfo, _ := request.UserFrom(ctx)
+
+		// On create, get name from new object if unset
+		if len(name) == 0 {
+			_, name, _ = scope.Namer.ObjectName(obj)
+		}
+
+		trace.Step("About to store object in database")
+		// 4、执行 admit 操作，即执行 kube-apiserver 启动时加载的 admission-plugins，
+		admissionAttributes := admission.NewAttributesRecord(obj, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Create, options, dryrun.IsDryRun(options.DryRun), userInfo)
+		requestFunc := func() (runtime.Object, error) {
+		// 5、执行 create 操作
+			return r.Create(
+				ctx,
+				name,
+				obj,
+				rest.AdmissionToValidateObjectFunc(admit, admissionAttributes, scope),
+				options,
+			)
+		}
+		result, err := finishRequest(timeout, func() (runtime.Object, error) {
+			if scope.FieldManager != nil {
+				liveObj, err := scope.Creater.New(scope.Kind)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create new object (Create for %v): %v", scope.Kind, err)
+				}
+				obj = scope.FieldManager.UpdateNoErrors(liveObj, obj, managerOrUserAgent(options.FieldManager, req.UserAgent()))
+			}
+			if mutatingAdmission, ok := admit.(admission.MutationInterface); ok && mutatingAdmission.Handles(admission.Create) {
+				if err := mutatingAdmission.Admit(ctx, admissionAttributes, scope); err != nil {
+					return nil, err
+				}
+			}
+			result, err := requestFunc()
+			// If the object wasn't committed to storage because it's serialized size was too large,
+			// it is safe to remove managedFields (which can be large) and try again.
+			if isTooLargeError(err) {
+				if accessor, accessorErr := meta.Accessor(obj); accessorErr == nil {
+					accessor.SetManagedFields(nil)
+					result, err = requestFunc()
+				}
+			}
+			return result, err
+		})
+		if err != nil {
+			scope.err(err, w, req)
+			return
+		}
+		trace.Step("Object stored in database")
+
+		code := http.StatusCreated
+		status, ok := result.(*metav1.Status)
+		if ok && err == nil && status.Code == 0 {
+			status.Code = int32(code)
+		}
+		transformResponseObject(ctx, scope, trace, req, w, code, outputMediaType, result)
+	}
+}
+```
+
+
+
+**四、Container.Add**
 
 回到InstallREST方法，下一步调用container包的Add方法，将WebService添加到container中。
 

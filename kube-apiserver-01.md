@@ -1,5 +1,46 @@
 # kube-apiserver源码分析-01
 
+kube-apiserver 是 kubernetes 中与 etcd 直接交互的一个组件，其控制着 kubernetes 中核心资源的变化。它主要提供了以下几个功能：
+
+- 提供 [Kubernetes API](https://kubernetes.io/docs/concepts/overview/kubernetes-api/)，包括认证授权、数据校验以及集群状态变更等，供客户端及其他组件调用；
+- 代理集群中的一些附加组件组件，如 Kubernetes UI、metrics-server、npd 等；
+- 创建 kubernetes 服务，即提供 apiserver 的 Service，kubernetes Service；
+- 资源在不同版本之间的转换；
+
+### kube-apiserver 处理流程
+
+kube-apiserver 主要通过对外提供 API 的方式与其他组件进行交互，可以调用 kube-apiserver 的接口 `$ curl -k https://<masterIP>:6443`或者通过其提供的 **swagger-ui** 获取到，其主要有以下三种 API：
+
+- core group：主要在 `/api/v1` 下；
+- named groups：其 path 为 `/apis/$NAME/$VERSION`；
+- 暴露系统状态的一些 API：如`/metrics` 、`/healthz` 等；
+
+API 的 URL 大致以 `/apis/group/version/namespaces/my-ns/myresource` 组成，其中 API 的结构大致如下图所示：
+
+了解了 kube-apiserver 的 API 后，下面会介绍 kube-apiserver 如何处理一个 API 请求，一个请求完整的流程如下图所示：
+
+此处以一次 POST 请求示例说明，当请求到达 kube-apiserver 时，kube-apiserver 首先会执行在 http filter chain 中注册的过滤器链，该过滤器对其执行一系列过滤操作，主要有认证、鉴权等检查操作。当 filter chain 处理完成后，请求会通过 route 进入到对应的 handler 中，handler 中的操作主要是与 etcd 的交互，在 handler 中的主要的操作如下所示：
+
+**Decoder**
+
+kubernetes 中的多数 resource 都会有一个 `internal version`，因为在整个开发过程中一个 resource 可能会对应多个 version，比如 deployment 会有 `extensions/v1beta1`，`apps/v1`。 为了避免出现问题，kube-apiserver 必须要知道如何在每一对版本之间进行转换（例如，v1⇔v1alpha1，v1⇔v1beta1，v1beta1⇔v1alpha1），因此其使用了一个特殊的`internal version`，`internal version` 作为一个通用的 version 会包含所有 version 的字段，它具有所有 version 的功能。 Decoder 会首先把 creater object 转换到 `internal version`，然后将其转换为 `storage version`，`storage version` 是在 etcd 中存储时的另一个 version。
+
+在解码时，首先从 HTTP path 中获取期待的 version，然后使用 scheme 以正确的 version 创建一个与之匹配的空对象，并使用 JSON 或 protobuf 解码器进行转换，在转换的第一步中，如果用户省略了某些字段，Decoder 会把其设置为默认值。
+
+**Admission**
+
+在解码完成后，需要通过验证集群的全局约束来检查是否可以创建或更新对象，并根据集群配置设置默认值。在 `k8s.io/kubernetes/plugin/pkg/admission` 目录下可以看到 kube-apiserver 可以使用的所有全局约束插件，kube-apiserver 在启动时通过设置 `--enable-admission-plugins` 参数来开启需要使用的插件，通过 `ValidatingAdmissionWebhook` 或 `MutatingAdmissionWebhook` 添加的插件也都会在此处进行工作。
+
+**Validation**
+
+主要检查 object 中字段的合法性。
+
+在 handler 中执行完以上操作后最后会执行与 etcd 相关的操作，POST 操作会将数据写入到 etcd 中，以上在 handler 中的主要处理流程如下所示：
+
+```
+v1beta1 ⇒internal⇒|⇒|⇒  v1  ⇒ json/yaml ⇒ etcd 
+```
+
 kube-apiserver 共由 3 个组件构成（Aggregator. KubeAPIServer. APIExtensionServer），这些组件依次通过 Delegation 处理请求：
 
 - Aggregator：暴露的功能类似于一个七层负载均衡，将来自用户的请求拦截转发给其他服务器，并且负责整个 APIServer 的 Discovery 功能；也负责处理ApiService，注册对应的扩展api。
