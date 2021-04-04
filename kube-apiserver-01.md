@@ -103,6 +103,10 @@ API 的 URL 大致以 `/apis/group/version/namespaces/my-ns/myresource` 组成�
 
 ![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/api-server-03.png)
 
+![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/api-server-04.png)
+
+![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/api-server-05.png)
+
 **Decoder**
 
 kubernetes 中的多数 resource 都会有一个 `internal version`，因为在整个开发过程中一个 resource 可能会对应多个 version，比如 deployment 会有 `extensions/v1beta1`，`apps/v1`。 为了避免出现问题，kube-apiserver 必须要知道如何在每一对版本之间进行转换（例如，v1⇔v1alpha1，v1⇔v1beta1，v1beta1⇔v1alpha1），因此其使用了一个特殊的`internal version`，`internal version` 作为一个通用的 version 会包含所有 version 的字段，它具有所有 version 的功能。 Decoder 会首先把 creater object 转换到 `internal version`，然后将其转换为 `storage version`，`storage version` 是在 etcd 中存储时的另一个 version。
