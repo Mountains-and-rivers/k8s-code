@@ -519,14 +519,28 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
 
    7. finalizingController：类似于 finalizes 的功能，与 CRs 的删除有关；
 
+      APIExtensionsServer 是最先被初始化的，在 `createAPIExtensionsServer` 中调用 `apiextensionsConfig.Complete().New` 来完成 server 的初始化，其主要逻辑为：
+
+      - 1、首先调用 `c.GenericConfig.New` 按照`go-restful`的模式初始化 Container，在 `c.GenericConfig.New` 中会调用 `NewAPIServerHandler` 初始化 handler，APIServerHandler 包含了 API Server 使用的多种http.Handler 类型，包括 `go-restful` 以及 `non-go-restful`，以及在以上两者之间选择的 Director 对象，`go-restful` 用于处理已经注册的 handler，`non-go-restful` 用来处理不存在的 handler，API URI 处理的选择过程为：`FullHandlerChain-> Director ->{GoRestfulContainer， NonGoRestfulMux}`。在 `c.GenericConfig.New` 中还会调用 `installAPI`来添加包括 `/`、`/debug/*`、`/metrics`、`/version` 等路由信息。三种 server 在初始化时首先都会调用 `c.GenericConfig.New` 来初始化一个 genericServer，然后进行 API 的注册；
+   
+      - 2、调用 `s.GenericAPIServer.InstallAPIGroup` 在路由中注册 API Resources，此方法的调用链非常深，主要是为了将需要暴露的 API Resource 注册到 server 中，以便能通过 http 接口进行 resource 的 REST 操作，其他几种 server 在初始化时也都会执行对应的 `InstallAPI`；
       
-
-      createAPIExtensionsServer 调用apiextensionsConfig.Complete().New(delegateAPIServer)
-
+      - 3、初始化 server 中需要使用的 controller，主要有 `openapiController`、`crdController`、`namingController`、`establishingController`、`nonStructuralSchemaController`、`apiApprovalController`、`finalizingControlle`r；
+   
+      - 4、将需要启动的 controller 以及 informer 添加到 PostStartHook 中；
+      
+        k8s.io/kubernetes/cmd/kube-apiserver/app/apiextensions.go
+      
+      ```
+      func createAPIExtensionsServer(apiextensionsConfig *apiextensionsapiserver.Config, delegateAPIServer genericapiserver.DelegationTarget) (*apiextensionsapiserver.CustomResourceDefinitions, error) {
+      	return apiextensionsConfig.Complete().New(delegateAPIServer)
+      }
+      ```
+   
    ```
    k8s.io/kubernetes/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/apiserver.go
    ```
-
+   
    ```
    // New returns a new instance of CustomResourceDefinitions from the given config.
    func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget) (*CustomResourceDefinitions, error) {
@@ -566,7 +580,7 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    
    		apiGroupInfo.VersionedResourcesStorageMap[v1.SchemeGroupVersion.Version] = storage
    	}
-   // 注册apigroup
+       // 注册apigroup
    	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo); err != nil {
    		return nil, err
    	}
@@ -653,9 +667,9 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    		case <-discoverySyncedCh:
    		}
    
-   		return nil
+		return nil
    	})
-   	// we don't want to report healthy until we can handle all CRDs that have already been registered.  Waiting for the informer
+	// we don't want to report healthy until we can handle all CRDs that have already been registered.  Waiting for the informer
    	// to sync makes sure that the lister will be valid before we begin.  There may still be races for CRDs added after startup,
    	// but we won't go healthy until we can handle the ones already present.
    	s.GenericAPIServer.AddPostStartHookOrDie("crd-informer-synced", func(context genericapiserver.PostStartHookContext) error {
@@ -667,9 +681,9 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	return s, nil
    }
    ```
-
+   
    c.GenericConfig.New来初始化genericapiserver,包裹一些默认链，创建handler
-
+   
    ```
    // New creates a new server which logically combines the handling chain with the passed server.
    // name is used to differentiate for logging. The handler chain in particular can be difficult as it starts delgating.
@@ -681,9 +695,9 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	if c.LoopbackClientConfig == nil {
    		return nil, fmt.Errorf("Genericapiserver.New() called with config.LoopbackClientConfig == nil")
    	}
-   	if c.EquivalentResourceRegistry == nil {
+	if c.EquivalentResourceRegistry == nil {
    		return nil, fmt.Errorf("Genericapiserver.New() called with config.EquivalentResourceRegistry == nil")
-   	}
+	}
       // 包裹了DefaultBuildHandlerChain
    	handlerChainBuilder := func(handler http.Handler) http.Handler {
    		return c.BuildHandlerChainFunc(handler, c.Config)
@@ -695,9 +709,9 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	return s, nil
    }
    ```
-
+   
    APIServerHandler包含多种http.Handler类型，包括go-restful以及non-go-restful，以及在以上两者之间选择的Director对象，go-restful用于处理已经注册的handler，non-go-restful用来处理不存在的handler，API URI处理的选择过程为：FullHandlerChain-> Director ->{GoRestfulContainer， NonGoRestfulMux}。NewAPIServerHandler
-
+   
    ```
    func NewAPIServerHandler(name string, s runtime.NegotiatedSerializer, handlerChainBuilder HandlerChainBuilderFn, notFoundHandler http.Handler) *APIServerHandler {
    // non-go-restful路由
@@ -716,19 +730,19 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    		serviceErrorHandler(s, serviceErr, request, response)
    	})
    // 选择器, 根据path选择是否执行go-restful，注册过的path执行go-restful
-   	director := director{
+	director := director{
    		name:               name,
-   		goRestfulContainer: gorestfulContainer,
+		goRestfulContainer: gorestfulContainer,
    		nonGoRestfulMux:    nonGoRestfulMux,
-   	}
+	}
    
-   	return &APIServerHandler{
+	return &APIServerHandler{
    		FullHandlerChain:   handlerChainBuilder(director),
-   		GoRestfulContainer: gorestfulContainer,
+		GoRestfulContainer: gorestfulContainer,
    		NonGoRestfulMux:    nonGoRestfulMux,
    		Director:           director,
    	}
-   }
+}
    ```
 
    以上是APIExtensionsServer的初始化流程，初始化Server, 调用s.GenericAPIServer.InstallAPIGroup注册api。此方法的调用链非常深，主要是为了将需要暴露的API Resource注册到 server 中，以便能通过 http 接口进行 resource 的 REST 操作，其他几种 server 在初始化时也都会执行对应的 InstallAPI方法。
@@ -736,34 +750,264 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    ### KubeAPIServer初始化
 
    KubeAPIServer 主要是提供对 API Resource 的操作请求，为 kubernetes 中众多 API 注册路由信息，暴露 RESTful API 并且对外提供 kubernetes service，使集群中以及集群外的服务都可以通过 RESTful API 操作 kubernetes 中的资源。
-
+   
    与`APIExtensionsServer`，`KubeAPIServer`初始化流程如下
-
+   
    1. `CreateKubeAPIServer`调用`kubeAPIServerConfig.Complete().New`来初始化
-   2. `New`函数创建默认的`apigroup`(pod,deployment等内部资源), 调用`InstallAPIs`注册
-   3. 启动相关controller, 加入到`poststarthook`
-
+   
+2. `New`函数创建默认的`apigroup`(pod,deployment等内部资源), 调用`InstallAPIs`注册
+   
+3. 启动相关controller, 加入到`poststarthook`
+   
+      ##### kubeAPIServerConfig.Complete().New
+   
+   主要逻辑为：
+   
+   - 1、调用 `c.GenericConfig.New` 初始化 GenericAPIServer，其主要实现在上文已经分析过；
+   
+      - 2、判断是否支持 logs 相关的路由，如果支持，则添加 `/logs` 路由；
+   
+      - 3、调用 `m.InstallLegacyAPI` 将核心 API Resource 添加到路由中，对应到 apiserver 就是以 `/api` 开头的 resource；
+   
+      - 4、调用 `m.InstallAPIs` 将扩展的 API Resource 添加到路由中，在 apiserver 中即是以 `/apis` 开头的 resource；
+   
+        k8s.io/kubernetes/cmd/kube-apiserver/app/server.go
+   
+        ```
+        // CreateKubeAPIServer creates and wires a workable kube-apiserver
+        func CreateKubeAPIServer(kubeAPIServerConfig *controlplane.Config, delegateAPIServer genericapiserver.DelegationTarget) (*controlplane.Instance, error) {
+        	kubeAPIServer, err := kubeAPIServerConfig.Complete().New(delegateAPIServer)
+        	if err != nil {
+        		return nil, err
+        	}
+        
+        	return kubeAPIServer, nil
+        }
+        
+        
+        	if err := config.GenericConfig.AddPostStartHook("start-kube-apiserver-admission-initializer", admissionPostStartHook); err != nil {
+        		return nil, nil, nil, nil, err
+        	}
+        ```
+   
+        k8s.io\Kubernetes\pkg\controlplane\instance.go
+   
+        ```
+        // New returns a new instance of Master from the given config.
+        // Certain config fields will be set to a default value if unset.
+        // Certain config fields must be specified, including:
+        //   KubeletClientConfig
+        func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget) (*Instance, error) {
+        	if reflect.DeepEqual(c.ExtraConfig.KubeletClientConfig, kubeletclient.KubeletClientConfig{}) {
+        		return nil, fmt.Errorf("Master.New() called with empty config.KubeletClientConfig")
+        	}
+        // 1、初始化 GenericAPIServer
+        	s, err := c.GenericConfig.New("kube-apiserver", delegationTarget)
+        	if err != nil {
+        		return nil, err
+        	}
+        // 2、注册 logs 相关的路由
+        	if c.ExtraConfig.EnableLogsSupport {
+        		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
+        	}
+        
+        	if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
+        		// Metadata and keys are expected to only change across restarts at present,
+        		// so we just marshal immediately and serve the cached JSON bytes.
+        		md, err := serviceaccount.NewOpenIDMetadata(
+        			c.ExtraConfig.ServiceAccountIssuerURL,
+        			c.ExtraConfig.ServiceAccountJWKSURI,
+        			c.GenericConfig.ExternalAddress,
+        			c.ExtraConfig.ServiceAccountPublicKeys,
+        		)
+        		if err != nil {
+        			// If there was an error, skip installing the endpoints and log the
+        			// error, but continue on. We don't return the error because the
+        			// metadata responses require additional, backwards incompatible
+        			// validation of command-line options.
+        			msg := fmt.Sprintf("Could not construct pre-rendered responses for"+
+        				" ServiceAccountIssuerDiscovery endpoints. Endpoints will not be"+
+        				" enabled. Error: %v", err)
+        			if c.ExtraConfig.ServiceAccountIssuerURL != "" {
+     				// The user likely expects this feature to be enabled if issuer URL is
+        				// set and the feature gate is enabled. In the future, if there is no
+     				// longer a feature gate and issuer URL is not set, the user may not
+        				// expect this feature to be enabled. We log the former case as an Error
+        				// and the latter case as an Info.
+        				klog.Error(msg)
+        			} else {
+        				klog.Info(msg)
+        			}
+        		} else {
+        			routes.NewOpenIDMetadataServer(md.ConfigJSON, md.PublicKeysetJSON).
+        				Install(s.Handler.GoRestfulContainer)
+        		}
+        	}
+        
+        	m := &Instance{
+        		GenericAPIServer:          s,
+        		ClusterAuthenticationInfo: c.ExtraConfig.ClusterAuthenticationInfo,
+        	}
+        
+        	// install legacy rest storage
+        	// 3、安装 LegacyAPI
+        	if c.ExtraConfig.APIResourceConfigSource.VersionEnabled(apiv1.SchemeGroupVersion) {
+        		legacyRESTStorageProvider := corerest.LegacyRESTStorageProvider{
+        			StorageFactory:              c.ExtraConfig.StorageFactory,
+        			ProxyTransport:              c.ExtraConfig.ProxyTransport,
+        			KubeletClientConfig:         c.ExtraConfig.KubeletClientConfig,
+        			EventTTL:                    c.ExtraConfig.EventTTL,
+        			ServiceIPRange:              c.ExtraConfig.ServiceIPRange,
+        			SecondaryServiceIPRange:     c.ExtraConfig.SecondaryServiceIPRange,
+        			ServiceNodePortRange:        c.ExtraConfig.ServiceNodePortRange,
+        			LoopbackClientConfig:        c.GenericConfig.LoopbackClientConfig,
+        			ServiceAccountIssuer:        c.ExtraConfig.ServiceAccountIssuer,
+        			ExtendExpiration:            c.ExtraConfig.ExtendExpiration,
+        			ServiceAccountMaxExpiration: c.ExtraConfig.ServiceAccountMaxExpiration,
+        			APIAudiences:                c.GenericConfig.Authentication.APIAudiences,
+        		}
+        		if err := m.InstallLegacyAPI(&c, c.GenericConfig.RESTOptionsGetter, legacyRESTStorageProvider); err != nil {
+        			return nil, err
+        		}
+        	}
+        
+        	// The order here is preserved in discovery.
+        	// If resources with identical names exist in more than one of these groups (e.g. "deployments.apps"" and "deployments.extensions"),
+        	// the order of this list determines which group an unqualified resource name (e.g. "deployments") should prefer.
+        	// This priority order is used for local discovery, but it ends up aggregated in `k8s.io/kubernetes/cmd/kube-apiserver/app/aggregator.go
+        	// with specific priorities.
+        	// TODO: describe the priority all the way down in the RESTStorageProviders and plumb it back through the various discovery
+        	// handlers that we have.
+        	restStorageProviders := []RESTStorageProvider{
+        		apiserverinternalrest.StorageProvider{},
+        		authenticationrest.RESTStorageProvider{Authenticator: c.GenericConfig.Authentication.Authenticator, APIAudiences: c.GenericConfig.Authentication.APIAudiences},
+        		authorizationrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorization.Authorizer, RuleResolver: c.GenericConfig.RuleResolver},
+        		autoscalingrest.RESTStorageProvider{},
+     		batchrest.RESTStorageProvider{},
+        		certificatesrest.RESTStorageProvider{},
+        		coordinationrest.RESTStorageProvider{},
+        		discoveryrest.StorageProvider{},
+        		extensionsrest.RESTStorageProvider{},
+        		networkingrest.RESTStorageProvider{},
+        		noderest.RESTStorageProvider{},
+        		policyrest.RESTStorageProvider{},
+        		rbacrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorization.Authorizer},
+        		schedulingrest.RESTStorageProvider{},
+        		storagerest.RESTStorageProvider{},
+        		flowcontrolrest.RESTStorageProvider{},
+        		// keep apps after extensions so legacy clients resolve the extensions versions of shared resource names.
+        		// See https://github.com/kubernetes/kubernetes/issues/42392
+        		appsrest.StorageProvider{},
+        		admissionregistrationrest.RESTStorageProvider{},
+        		eventsrest.RESTStorageProvider{TTL: c.ExtraConfig.EventTTL},
+        	}
+        	
+        	// 4、安装 APIs
+        	if err := m.InstallAPIs(c.ExtraConfig.APIResourceConfigSource, c.GenericConfig.RESTOptionsGetter, restStorageProviders...); err != nil {
+        		return nil, err
+        	}
+        
+        	if c.ExtraConfig.Tunneler != nil {
+        		m.installTunneler(c.ExtraConfig.Tunneler, corev1client.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig).Nodes())
+        	}
+        
+        	m.GenericAPIServer.AddPostStartHookOrDie("start-cluster-authentication-info-controller", func(hookContext genericapiserver.PostStartHookContext) error {
+        		kubeClient, err := kubernetes.NewForConfig(hookContext.LoopbackClientConfig)
+        		if err != nil {
+        			return err
+        		}
+        		controller := clusterauthenticationtrust.NewClusterAuthenticationTrustController(m.ClusterAuthenticationInfo, kubeClient)
+        
+        		// prime values and start listeners
+        		if m.ClusterAuthenticationInfo.ClientCA != nil {
+        			if notifier, ok := m.ClusterAuthenticationInfo.ClientCA.(dynamiccertificates.Notifier); ok {
+        				notifier.AddListener(controller)
+        			}
+        			if controller, ok := m.ClusterAuthenticationInfo.ClientCA.(dynamiccertificates.ControllerRunner); ok {
+        				// runonce to be sure that we have a value.
+        				if err := controller.RunOnce(); err != nil {
+        					runtime.HandleError(err)
+        				}
+        				go controller.Run(1, hookContext.StopCh)
+        			}
+        		}
+        		if m.ClusterAuthenticationInfo.RequestHeaderCA != nil {
+        			if notifier, ok := m.ClusterAuthenticationInfo.RequestHeaderCA.(dynamiccertificates.Notifier); ok {
+        				notifier.AddListener(controller)
+        			}
+        			if controller, ok := m.ClusterAuthenticationInfo.RequestHeaderCA.(dynamiccertificates.ControllerRunner); ok {
+        				// runonce to be sure that we have a value.
+        				if err := controller.RunOnce(); err != nil {
+        					runtime.HandleError(err)
+        				}
+        				go controller.Run(1, hookContext.StopCh)
+        			}
+        		}
+        
+        		go controller.Run(1, hookContext.StopCh)
+        		return nil
+        	})
+        
+        	return m, nil
+        }
+        ```
+   
+        ##### m.InstallLegacyAPI
+   
+        此方法的主要功能是将 core API 注册到路由中，是 apiserver 初始化流程中最核心的方法之一，不过其调用链非常深，下面会进行深入分析。将 API 注册到路由其最终的目的就是对外提供 RESTful API 来操作对应 resource，注册 API 主要分为两步，第一步是为 API 中的每个 resource 初始化 RESTStorage 以此操作后端存储中数据的变更，第二步是为每个 resource 根据其 verbs 构建对应的路由。`m.InstallLegacyAPI` 的主要逻辑为：
+   
+        - 1、调用 `legacyRESTStorageProvider.NewLegacyRESTStorage` 为 LegacyAPI 中各个资源创建 RESTStorage，RESTStorage 的目的是将每种资源的访问路径及其后端存储的操作对应起来；
+        - 2、初始化 `bootstrap-controller`，并将其加入到 PostStartHook 中，`bootstrap-controller` 是 apiserver 中的一个 controller，主要功能是创建系统所需要的一些 namespace 以及创建 kubernetes service 并定期触发对应的 sync 操作，apiserver 在启动后会通过调用 PostStartHook 来启动 `bootstrap-controller`；
+        - 3、在为资源创建完 RESTStorage 后，调用 `m.GenericAPIServer.InstallLegacyAPIGroup` 为 APIGroup 注册路由信息，`InstallLegacyAPIGroup`方法的调用链非常深，主要为`InstallLegacyAPIGroup--> installAPIResources --> InstallREST --> Install --> registerResourceHandlers`，最终核心的路由构造在`registerResourceHandlers`方法内，该方法比较复杂，其主要功能是通过上一步骤构造的 REST Storage 判断该资源可以执行哪些操作（如 create、update等），将其对应的操作存入到 action 中，每一个 action 对应一个标准的 REST 操作，如 create 对应的 action 操作为 POST、update 对应的 action 操作为PUT。最终根据 actions 数组依次遍历，对每一个操作添加一个 handler 方法，注册到 route 中去，再将 route 注册到 webservice 中去，webservice 最终会注册到 container 中，遵循 go-restful 的设计模式；
+   
+        关于 `legacyRESTStorageProvider.NewLegacyRESTStorage` 以及 `m.GenericAPIServer.InstallLegacyAPIGroup` 方法的详细说明在后文中会继续进行讲解。
+   
+        k8s.io\Kubernetes\pkg\controlplane\instance.go
+   
+        ```
+        // InstallLegacyAPI will install the legacy APIs for the restStorageProviders if they are enabled.
+        func (m *Instance) InstallLegacyAPI(c *completedConfig, restOptionsGetter generic.RESTOptionsGetter, legacyRESTStorageProvider corerest.LegacyRESTStorageProvider) error {
+        	legacyRESTStorage, apiGroupInfo, err := legacyRESTStorageProvider.NewLegacyRESTStorage(restOptionsGetter)
+        	if err != nil {
+        		return fmt.Errorf("error building core storage: %v", err)
+        	}
+        
+        	controllerName := "bootstrap-controller"
+        	coreClient := corev1client.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig)
+        	bootstrapController := c.NewBootstrapController(legacyRESTStorage, coreClient, coreClient, coreClient, coreClient.RESTClient())
+        	m.GenericAPIServer.AddPostStartHookOrDie(controllerName, bootstrapController.PostStartHook)
+        	m.GenericAPIServer.AddPreShutdownHookOrDie(controllerName, bootstrapController.PreShutdownHook)
+        
+        	if err := m.GenericAPIServer.InstallLegacyAPIGroup(genericapiserver.DefaultLegacyAPIPrefix, &apiGroupInfo); err != nil {
+        		return fmt.Errorf("error in registering group versions: %v", err)
+        	}
+        	return nil
+        }
+        ```
+   
+        `InstallAPIs` 与 `InstallLegacyAPI` 的主要流程是类似的
+   
    ### AggregatorServer初始化
-
+   
    `Aggregator`通过`APIServices`对象关联到某个`Service`来进行请求的转发，其关联的`Service`类型进一步决定了请求转发形式。`Aggregator`包括一个`GenericAPIServer`和维护自身状态的`Controller`。其中 `GenericAPIServer`主要处理`apiregistration.k8s.io`组下的`APIService`资源请求。
-
+   
    `Aggregator`除了处理资源请求外还包含几个controller：
-
+   
    1. apiserviceRegistrationController：负责`APIServices`中资源的注册与删除；
    2. availableConditionController：维护`APIServices`的可用状态，包括其引用`Service`是否可用等；
    3. autoRegistrationController：用于保持API中存在的一组特定的`APIServices`；
    4. crdRegistrationController：负责将`CRD GroupVersions`自动注册到`APIServices`中；
    5. openAPIAggregationController：将`APIServices`资源的变化同步至提供的`OpenAPI`文档；
       kubernetes中的一些附加组件，比如metrics-server就是通过Aggregator的方式进行扩展的，实际环境中可以通过使用apiserver-builder工具轻松以Aggregator的扩展方式创建自定义资源。
-
+   
    初始化AggregatorServer的主要逻辑为：
-
+   
    1. 调用`aggregatorConfig.Complete().NewWithDelegate`创建`aggregatorServer`
    2. 初始化`crdRegistrationController`和`autoRegistrationController`，`crdRegistrationController`负责注册CRD，`autoRegistrationController`负责将 CRD 对应的 APIServices自动注册到apiserver中，CRD 创建后可通过`$ kubectl get apiservices`查看是否注册到 apiservices中
    3. 将`autoRegistrationController`和`crdRegistrationController`加入到PostStartHook中
-
+   
    首先，初始化配置`createAggregatorConfig`
-
+   
    ```
    func createAggregatorConfig(
    	kubeAPIServerConfig genericapiserver.Config,
@@ -829,11 +1073,12 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	return aggregatorConfig, nil
    }
    ```
-
+   
    始化AggregatorcreateAggregatorServer初始化Aggregator
-
+   
    ```
    func createAggregatorServer(aggregatorConfig *aggregatorapiserver.Config, delegateAPIServer genericapiserver.DelegationTarget, apiExtensionInformers apiextensionsinformers.SharedInformerFactory) (*aggregatorapiserver.APIAggregator, error) {
+      //初始化 aggregatorServer
    	aggregatorServer, err := aggregatorConfig.Complete().NewWithDelegate(delegateAPIServer)
    	if err != nil {
    		return nil, err
@@ -883,10 +1128,158 @@ Apiserver通过`Run`方法启动, 主要逻辑为：
    	return aggregatorServer, nil
    }
    ```
-
    
+   ##### aggregatorConfig.Complete().NewWithDelegate
+   
+   `aggregatorConfig.Complete().NewWithDelegate` 是初始化 aggregatorServer 的方法，主要逻辑为：
+   
+   - 1、调用 `c.GenericConfig.New` 初始化 GenericAPIServer，其内部的主要功能在上文已经分析过；
+   - 2、调用 `apiservicerest.NewRESTStorage` 为 APIServices 资源创建 RESTStorage，RESTStorage 的目的是将每种资源的访问路径及其后端存储的操作对应起来；
+   - 3、调用 `s.GenericAPIServer.InstallAPIGroup` 为 APIGroup 注册路由信息；
 
 至此，启动步骤以前分析完了，三个组件的流量大体时一样的，通过`Complete().New()`初始化配置，创建所需的controller, 调用`InstallAPIGroup`注册`apigroup`。
+
+k8s.io\Kubernetes\cmd\kube-apiserver\app\aggregator.go
+
+```
+func createAggregatorServer(aggregatorConfig *aggregatorapiserver.Config, delegateAPIServer genericapiserver.DelegationTarget, apiExtensionInformers apiextensionsinformers.SharedInformerFactory) (*aggregatorapiserver.APIAggregator, error) {
+	aggregatorServer, err := aggregatorConfig.Complete().NewWithDelegate(delegateAPIServer)
+	if err != nil {
+		return nil, err
+	}
+
+	// create controllers for auto-registration
+	apiRegistrationClient, err := apiregistrationclient.NewForConfig(aggregatorConfig.GenericConfig.LoopbackClientConfig)
+	if err != nil {
+		return nil, err
+	}
+	autoRegistrationController := autoregister.NewAutoRegisterController(aggregatorServer.APIRegistrationInformers.Apiregistration().V1().APIServices(), apiRegistrationClient)
+	apiServices := apiServicesToRegister(delegateAPIServer, autoRegistrationController)
+	crdRegistrationController := crdregistration.NewCRDRegistrationController(
+		apiExtensionInformers.Apiextensions().V1().CustomResourceDefinitions(),
+		autoRegistrationController)
+
+```
+
+
+
+k8s.io\Kubernetes\vendor\k8s.io\kube-aggregator\pkg\apiserver\apiserver.go
+
+```
+// NewWithDelegate returns a new instance of APIAggregator from the given config.
+func (c completedConfig) NewWithDelegate(delegationTarget genericapiserver.DelegationTarget) (*APIAggregator, error) {
+	// Prevent generic API server to install OpenAPI handler. Aggregator server
+	// has its own customized OpenAPI handler.
+	openAPIConfig := c.GenericConfig.OpenAPIConfig
+	c.GenericConfig.OpenAPIConfig = nil
+// 1、初始化 genericServer
+	genericServer, err := c.GenericConfig.New("kube-aggregator", delegationTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	apiregistrationClient, err := clientset.NewForConfig(c.GenericConfig.LoopbackClientConfig)
+	if err != nil {
+		return nil, err
+	}
+	informerFactory := informers.NewSharedInformerFactory(
+		apiregistrationClient,
+		5*time.Minute, // this is effectively used as a refresh interval right now.  Might want to do something nicer later on.
+	)
+
+	s := &APIAggregator{
+		GenericAPIServer:           genericServer,
+		delegateHandler:            delegationTarget.UnprotectedHandler(),
+		proxyTransport:             c.ExtraConfig.ProxyTransport,
+		proxyHandlers:              map[string]*proxyHandler{},
+		handledGroups:              sets.String{},
+		lister:                     informerFactory.Apiregistration().V1().APIServices().Lister(),
+		APIRegistrationInformers:   informerFactory,
+		serviceResolver:            c.ExtraConfig.ServiceResolver,
+		openAPIConfig:              openAPIConfig,
+		egressSelector:             c.GenericConfig.EgressSelector,
+		proxyCurrentCertKeyContent: func() (bytes []byte, bytes2 []byte) { return nil, nil },
+	}
+// 2、为 API 注册路由
+	apiGroupInfo := apiservicerest.NewRESTStorage(c.GenericConfig.MergedResourceConfig, c.GenericConfig.RESTOptionsGetter)
+	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+		return nil, err
+	}
+
+	enabledVersions := sets.NewString()
+	for v := range apiGroupInfo.VersionedResourcesStorageMap {
+		enabledVersions.Insert(v)
+	}
+	if !enabledVersions.Has(v1.SchemeGroupVersion.Version) {
+		return nil, fmt.Errorf("API group/version %s must be enabled", v1.SchemeGroupVersion.String())
+	}
+// 3、初始化 apiserviceRegistrationController、availableController
+	apisHandler := &apisHandler{
+		codecs:         aggregatorscheme.Codecs,
+		lister:         s.lister,
+		discoveryGroup: discoveryGroup(enabledVersions),
+	}
+	s.GenericAPIServer.Handler.NonGoRestfulMux.Handle("/apis", apisHandler)
+	s.GenericAPIServer.Handler.NonGoRestfulMux.UnlistedHandle("/apis/", apisHandler)
+
+	apiserviceRegistrationController := NewAPIServiceRegistrationController(informerFactory.Apiregistration().V1().APIServices(), s)
+	if len(c.ExtraConfig.ProxyClientCertFile) > 0 && len(c.ExtraConfig.ProxyClientKeyFile) > 0 {
+		aggregatorProxyCerts, err := dynamiccertificates.NewDynamicServingContentFromFiles("aggregator-proxy-cert", c.ExtraConfig.ProxyClientCertFile, c.ExtraConfig.ProxyClientKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		if err := aggregatorProxyCerts.RunOnce(); err != nil {
+			return nil, err
+		}
+		aggregatorProxyCerts.AddListener(apiserviceRegistrationController)
+		s.proxyCurrentCertKeyContent = aggregatorProxyCerts.CurrentCertKeyContent
+// 4、添加 PostStartHook
+		s.GenericAPIServer.AddPostStartHookOrDie("aggregator-reload-proxy-client-cert", func(context genericapiserver.PostStartHookContext) error {
+			go aggregatorProxyCerts.Run(1, context.StopCh)
+			return nil
+		})
+	}
+
+	availableController, err := statuscontrollers.NewAvailableConditionController(
+		informerFactory.Apiregistration().V1().APIServices(),
+		c.GenericConfig.SharedInformerFactory.Core().V1().Services(),
+		c.GenericConfig.SharedInformerFactory.Core().V1().Endpoints(),
+		apiregistrationClient.ApiregistrationV1(),
+		c.ExtraConfig.ProxyTransport,
+		(func() ([]byte, []byte))(s.proxyCurrentCertKeyContent),
+		s.serviceResolver,
+		c.GenericConfig.EgressSelector,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s.GenericAPIServer.AddPostStartHookOrDie("start-kube-aggregator-informers", func(context genericapiserver.PostStartHookContext) error {
+		informerFactory.Start(context.StopCh)
+		c.GenericConfig.SharedInformerFactory.Start(context.StopCh)
+		return nil
+	})
+	s.GenericAPIServer.AddPostStartHookOrDie("apiservice-registration-controller", func(context genericapiserver.PostStartHookContext) error {
+		handlerSyncedCh := make(chan struct{})
+		go apiserviceRegistrationController.Run(context.StopCh, handlerSyncedCh)
+		select {
+		case <-context.StopCh:
+		case <-handlerSyncedCh:
+		}
+
+		return nil
+	})
+	s.GenericAPIServer.AddPostStartHookOrDie("apiservice-status-available-controller", func(context genericapiserver.PostStartHookContext) error {
+		// if we end up blocking for long periods of time, we may need to increase threadiness.
+		go availableController.Run(5, context.StopCh)
+		return nil
+	})
+
+	return s, nil
+}
+```
+
+以上是对 AggregatorServer 初始化流程的分析，可以看出，在创建 APIExtensionsServer、KubeAPIServer 以及 AggregatorServer 时，其模式都是类似的，首先调用 `c.GenericConfig.New` 按照`go-restful`的模式初始化 Container，然后为 server 中需要注册的资源创建 RESTStorage，最后将 resource 的 APIGroup 信息注册到路由中。
 
 ## 调用链
 
