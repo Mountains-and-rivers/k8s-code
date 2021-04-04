@@ -49,7 +49,7 @@ v1beta1 ⇒internal⇒|⇒|⇒  v1  ⇒ json/yaml ⇒ etcd
 
 kube-apiserver 共由 3 个组件构成（Aggregator. KubeAPIServer. APIExtensionServer），这些组件依次通过 Delegation 处理请求：
 
-- Aggregator：暴露的功能类似于一个七层负载均衡，将来自用户的请求拦截转发给其他服务器，并且负责整个 APIServer 的 Discovery 功能；也负责处理ApiService，注册对应的扩展api。
+- Aggregator：暴露的功能类似于一个七层负载均衡，将来自用户的请求拦截转发给其他服务器，并且负责整个 APIServer 的 Discovery 功能；也负责处理ApiService，注册对应的扩展api。 CRD 能够自动注册到集群中。
 
 - KubeAPIServer ：负责对请求的一些通用处理，认证. 鉴权等，以及处理各个内建资源的 REST 服务；
 
