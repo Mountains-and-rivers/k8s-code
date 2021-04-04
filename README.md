@@ -7,4 +7,4 @@
 1. [04.kube-apiserver配置创建与启动](kube-apiserver-01.md)
 1. [05.准入插件分析](admission.md)
 1. [06.路由注册分析](InstallLegacyAPIGroup.md)
-1. [06.storageFactory分析](kube-apiserver-02.md)
+1. [07.storageFactory分析](kube-apiserver-02.md)
