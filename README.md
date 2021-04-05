@@ -1,3 +1,12 @@
+
+## k8s源码编译启动
+
+1. [00.命令行参数传递](https://github.com/Mountains-and-rivers/k8s-code-analysis/blob/master/01-%E6%90%AD%E5%BB%BA%E8%B0%83%E8%AF%95%E7%8E%AF%E5%A2%83.md)
+
+## k8s二进制安装
+
+1. [00.命令行参数传递](https://github.com/Mountains-and-rivers/k8s-install-by-binary/blob/main/README.md)
+
 ## k8s源码解析
 
 1. [00.命令行参数传递](cobra.MD)
