@@ -135,5 +135,8 @@ go mod edit -replace google.golang.org/grpc@v1.37.0=google.golang.org/grpc@v1.26
 
 7，结果体验
 
-如图所示，当看到函数都绿了，不在显示红色，可以检索函数了，就可以愉快的阅读docker源码了.
+如图所示，当看到函数都绿了，不在显示红色，可以检索函数了，就可以愉快的阅读docker源码了.  
 
+![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/docker-01.png)
+
+![image](https://github.com/Mountains-and-rivers/k8s-code/blob/main/images/docker-02.png)
