@@ -1,6 +1,7 @@
 ### docker源码打开
+前提： 科学 上网  
 
-1,  安装编辑器 webstrom
+1,  安装编辑器 goland
 
 2，安装golang
 
