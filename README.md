@@ -23,6 +23,3 @@
 1. [07.storageFactory分析](kube-apiserver-02.md)
 1. [08,apiserver service实现分析](apiserver_service.md)
 1. [09,节点控制器分析](node-controller.md)
-## 参考思路
-
-由于很多博主 水平高，写得好，99% 都是结合源码直接copy的，抄的太多，无法一一记住.对源码记忆加深就行了.哈哈哈哈！
